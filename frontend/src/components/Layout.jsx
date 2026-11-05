@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { clearApiKey } from '../api.js'
+import { signOut } from '../api.js'
+import { useAuth } from '../AuthContext.jsx'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Новая презентация', end: true },
@@ -9,9 +10,10 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const navigate = useNavigate()
+  const { user } = useAuth()
 
-  const logout = () => {
-    clearApiKey()
+  const logout = async () => {
+    await signOut()
     navigate('/login', { replace: true })
   }
 
@@ -27,9 +29,12 @@ export default function Layout() {
               </NavLink>
             ))}
           </nav>
-          <button type="button" className="btn btn-ghost" onClick={logout}>
-            Выйти
-          </button>
+          <div className="user-area">
+            <span className="muted small">{user?.name}</span>
+            <button type="button" className="btn btn-ghost" onClick={logout}>
+              Выйти
+            </button>
+          </div>
         </div>
       </header>
       <main className="container main">

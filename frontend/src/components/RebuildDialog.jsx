@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { getThemes } from '../lib/pptxBuilder.js'
 
-export default function RebuildDialog({ task, templates, onClose, onRebuilt }) {
+const THEMES = getThemes()
+
+export default function RebuildDialog({ task, onClose, onRebuilt }) {
   const [title, setTitle] = useState(task.title)
-  const [templateId, setTemplateId] = useState(task.request.template_id ?? '')
+  const [templateId, setTemplateId] = useState(task.request.template_id ?? 'default')
   const [slidesCount, setSlidesCount] = useState(task.request.slides_count ?? 8)
-  const [wantPdf, setWantPdf] = useState(task.want_pdf)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -19,11 +21,10 @@ export default function RebuildDialog({ task, templates, onClose, onRebuilt }) {
     event.preventDefault()
     const changes = {}
     if (title.trim() !== task.title) changes.title = title.trim()
-    if (String(templateId) !== String(task.request.template_id ?? '')) {
-      changes.template_id = templateId ? Number(templateId) : null
+    if (String(templateId) !== String(task.request.template_id ?? 'default')) {
+      changes.template_id = templateId
     }
     if (Number(slidesCount) !== task.request.slides_count) changes.slides_count = Number(slidesCount)
-    if (wantPdf !== task.want_pdf) changes.want_pdf = wantPdf
     if (Object.keys(changes).length === 0) {
       setError('Измените хотя бы один параметр')
       return
@@ -53,13 +54,10 @@ export default function RebuildDialog({ task, templates, onClose, onRebuilt }) {
             <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
           </label>
           <label className="field">
-            <span className="label">Шаблон</span>
+            <span className="label">Оформление</span>
             <select className="input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              <option value="">Без шаблона</option>
-              {templates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
+              {THEMES.map((t) => (
+                <option key={t.key} value={t.key}>{t.name}</option>
               ))}
             </select>
           </label>
@@ -74,17 +72,13 @@ export default function RebuildDialog({ task, templates, onClose, onRebuilt }) {
               onChange={(e) => setSlidesCount(e.target.value)}
             />
           </label>
-          <label className="check">
-            <input type="checkbox" checked={wantPdf} onChange={(e) => setWantPdf(e.target.checked)} />
-            <span>Сделать также PDF</span>
-          </label>
           {error && <p className="alert alert-error">{error}</p>}
           <div className="form-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Отмена
             </button>
             <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? 'Запускаем…' : 'Собрать заново'}
+              {submitting ? 'Собираем…' : 'Собрать заново'}
             </button>
           </div>
         </form>

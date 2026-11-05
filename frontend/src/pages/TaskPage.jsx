@@ -12,7 +12,6 @@ export default function TaskPage() {
   const [error, setError] = useState('')
   const [downloadError, setDownloadError] = useState('')
   const [rebuilding, setRebuilding] = useState(false)
-  const [templates, setTemplates] = useState([])
 
   const load = useCallback(() => {
     api
@@ -35,14 +34,15 @@ export default function TaskPage() {
   }, [task, load])
 
   const openRebuild = () => {
-    api.listTemplates().then(setTemplates).catch(() => setTemplates([]))
     setRebuilding(true)
   }
 
   const download = async (format) => {
     setDownloadError('')
     try {
-      await downloadResult(task.id, format, task.title)
+      if (format === 'pptx') {
+        await downloadResult(task.id, task._pptx_key, task.title)
+      }
     } catch (err) {
       setDownloadError(err.message)
     }
@@ -89,11 +89,6 @@ export default function TaskPage() {
           >
             Скачать PPTX
           </button>
-          {task.want_pdf && (
-            <button type="button" className="btn btn-secondary" disabled={!task.has_pdf} onClick={() => download('pdf')}>
-              Скачать PDF
-            </button>
-          )}
           <button
             type="button"
             className="btn btn-ghost"
@@ -118,6 +113,42 @@ export default function TaskPage() {
                   <span className="tag">{SLIDE_TYPE_LABELS[slide.type] ?? slide.type}</span>
                 </div>
                 {slide.reasoning && <p className="muted small">{slide.reasoning}</p>}
+                {slide.bullets && slide.bullets.length > 0 && (
+                  <ul className="outline-bullets">
+                    {slide.bullets.map((b, i) => <li key={i}>{b}</li>)}
+                  </ul>
+                )}
+                {slide.table && (
+                  <div className="outline-table-wrap">
+                    <table className="outline-table">
+                      <thead>
+                        <tr>{slide.table.headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {slide.table.rows.map((row, i) => (
+                          <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {slide.chart && (
+                  <p className="muted small">
+                    Диаграмма: {slide.chart.kind || 'авто'}, {slide.chart.categories.length} категорий, {slide.chart.series.length} ряд(ов)
+                  </p>
+                )}
+                {slide.comparison && (
+                  <div className="outline-comparison">
+                    <div>
+                      <strong>{slide.comparison.left_title}</strong>
+                      <ul>{slide.comparison.left_items.map((item, i) => <li key={i}>{item}</li>)}</ul>
+                    </div>
+                    <div>
+                      <strong>{slide.comparison.right_title}</strong>
+                      <ul>{slide.comparison.right_items.map((item, i) => <li key={i}>{item}</li>)}</ul>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ol>
@@ -127,7 +158,6 @@ export default function TaskPage() {
       {rebuilding && (
         <RebuildDialog
           task={task}
-          templates={templates}
           onClose={() => setRebuilding(false)}
           onRebuilt={(rebuilt) => navigate(`/tasks/${rebuilt.id}`)}
         />

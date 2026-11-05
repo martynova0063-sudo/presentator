@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import { getThemes } from '../lib/pptxBuilder.js'
 
 const FAST_MODE_MAX_SLIDES = 5
+const THEMES = getThemes()
 const INITIAL_FORM = {
   title: '',
   text: '',
@@ -10,7 +12,7 @@ const INITIAL_FORM = {
   language: 'ru',
   audience: '',
   tone: '',
-  templateId: '',
+  templateId: 'default',
   wantPdf: false,
   fastMode: false,
   slidesJson: '',
@@ -32,13 +34,8 @@ function parseSlides(raw) {
 export default function GeneratePage() {
   const navigate = useNavigate()
   const [form, setForm] = useState(INITIAL_FORM)
-  const [templates, setTemplates] = useState([])
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    api.listTemplates().then(setTemplates).catch(() => setTemplates([]))
-  }, [])
 
   const update = (field) => (event) => {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value
@@ -69,9 +66,9 @@ export default function GeneratePage() {
         language: form.language,
         audience: form.audience.trim() || null,
         tone: form.tone.trim() || null,
-        template_id: form.templateId ? Number(form.templateId) : null,
+        template_id: form.templateId,
         want_pdf: form.wantPdf,
-        mode: form.fastMode ? 'sync' : 'async',
+        mode: 'sync',
       })
       navigate(`/tasks/${task.id}`)
     } catch (err) {
@@ -85,7 +82,7 @@ export default function GeneratePage() {
     <section className="page">
       <header className="page-header">
         <h1 className="title">Новая презентация</h1>
-        <p className="muted">Опишите содержание, и Презентатор соберет слайды по выбранному шаблону.</p>
+        <p className="muted">Опишите содержание, и Презентатор соберёт слайды в выбранном оформлении.</p>
       </header>
 
       <form className="card form fade-in" onSubmit={submit}>
@@ -136,22 +133,16 @@ export default function GeneratePage() {
         </div>
 
         <label className="field">
-          <span className="label">Корпоративный шаблон</span>
+          <span className="label">Оформление</span>
           <select className="input" value={form.templateId} onChange={update('templateId')}>
-            <option value="">Без шаблона</option>
-            {templates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name}
-              </option>
+            {THEMES.map((t) => (
+              <option key={t.key} value={t.key}>{t.name}</option>
             ))}
           </select>
+          <span className="hint">Выберите цветовую тему для презентации</span>
         </label>
 
         <div className="checks">
-          <label className="check">
-            <input type="checkbox" checked={form.wantPdf} onChange={update('wantPdf')} />
-            <span>Сделать также PDF</span>
-          </label>
           <label className="check">
             <input type="checkbox" checked={form.fastMode} onChange={update('fastMode')} />
             <span>Быстрый режим: результат сразу (до {FAST_MODE_MAX_SLIDES} слайдов)</span>
@@ -177,7 +168,7 @@ export default function GeneratePage() {
 
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={submitting || !form.title.trim()}>
-            {submitting ? 'Отправляем…' : 'Создать презентацию'}
+            {submitting ? 'Создаём презентацию…' : 'Создать презентацию'}
           </button>
         </div>
       </form>
