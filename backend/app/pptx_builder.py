@@ -19,6 +19,7 @@ _LAYOUT_NAMES = {
     "title_only": ("title only", "только заголовок"),
 }
 _LAYOUT_FALLBACK_INDEX = {"title": 0, "content": 1, "title_only": 5}
+_FONT_NAME = "DejaVu Sans"
 
 
 def validate_template(data: bytes) -> None:
@@ -38,6 +39,8 @@ def build_pptx(title: str, slides: list[SlideSpec], template: bytes | None) -> b
     _set_title(prs, title_slide, title)
     for spec in slides:
         _add_slide(prs, spec)
+    for slide in prs.slides:
+        _apply_font(slide)
     buffer = BytesIO()
     prs.save(buffer)
     return buffer.getvalue()
@@ -228,6 +231,19 @@ def _write_cell(cell, text: str, size: int, bold: bool = False) -> None:
     for paragraph in cell.text_frame.paragraphs:
         paragraph.font.size = Pt(size)
         paragraph.font.bold = bold
+
+
+def _apply_font(slide) -> None:
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        for paragraph in shape.text_frame.paragraphs:
+            for run in paragraph.runs:
+                run.font.name = _FONT_NAME
+                run_properties = run._r.get_or_add_rPr()
+                run_properties.get_or_add_latin().typeface = _FONT_NAME
+                run_properties.get_or_add_ea().typeface = _FONT_NAME
+                run_properties.get_or_add_cs().typeface = _FONT_NAME
 
 
 def _drop_empty_placeholders(slide) -> None:

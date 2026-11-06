@@ -144,18 +144,32 @@ def test_generation_with_template_uses_it(client):
     assert task["status"] == "completed"
 
 
-def test_mcp_initialize_list_and_generate(client):
+# ─── MCP Streamable HTTP tests ───────────────────────────────────────────
+
+
+def _mcp_init(client):
     init = client.post(
         "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
     )
     assert init.json()["result"]["serverInfo"]["name"] == "presentator"
+    session_id = init.headers.get("Mcp-Session-Id")
+    assert session_id
+    return session_id
+
+
+def test_mcp_initialize_list_and_generate(client):
+    session_id = _mcp_init(client)
 
     tools = client.post(
-        "/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        headers={"Mcp-Session-Id": session_id},
     ).json()
     assert {tool["name"] for tool in tools["result"]["tools"]} >= {
         "generate_presentation",
         "get_result",
+        "recommend_visualization",
+        "analyze_presentation",
     }
 
     call = client.post(
@@ -169,13 +183,97 @@ def test_mcp_initialize_list_and_generate(client):
                 "arguments": {"title": "Из MCP", "text": "Тема\n- тезис"},
             },
         },
+        headers={"Mcp-Session-Id": session_id},
     ).json()
     assert call["result"]["isError"] is False
     assert "task_id" in call["result"]["content"][0]["text"]
 
 
-def test_mcp_notification_returns_accepted(client):
+def test_mcp_recommend_visualization(client):
+    session_id = _mcp_init(client)
+
+    rec = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "recommend_visualization",
+                "arguments": {
+                    "title": "Продажи по кварталам",
+                    "bullets": ["Q1: 100", "Q2: 120", "Q3: 90"],
+                },
+            },
+        },
+        headers={"Mcp-Session-Id": session_id},
+    ).json()
+    content = rec["result"]["content"][0]["text"]
+    assert "visualization" in content
+    assert "reasoning" in content
+
+
+def test_mcp_analyze_presentation(client):
+    session_id = _mcp_init(client)
+
+    analysis = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "analyze_presentation",
+                "arguments": {
+                    "text": "Динамика продаж\n- рост на 12%\n- снижение затрат",
+                    "audience": "совет директоров",
+                    "tone": "деловой",
+                },
+            },
+        },
+        headers={"Mcp-Session-Id": session_id},
+    ).json()
+    content = analysis["result"]["content"][0]["text"]
+    assert "trend_mentions" in content
+    assert "audience" in content
+
+
+def test_mcp_ping(client):
+    session_id = _mcp_init(client)
+
+    pong = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 2, "method": "ping"},
+        headers={"Mcp-Session-Id": session_id},
+    ).json()
+    assert pong["result"]["status"] == "pong"
+
+
+def test_mcp_rejects_request_without_session(client):
     response = client.post(
-        "/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"}
+        "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     )
-    assert response.status_code == 202
+    assert response.status_code == 400
+
+
+def test_mcp_notification_returns_accepted(client):
+    session_id = _mcp_init(client)
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+        headers={"Mcp-Session-Id": session_id},
+    )
+    assert response.status_code == 204
+
+
+def test_mcp_delete_session(client):
+    session_id = _mcp_init(client)
+    response = client.delete("/mcp", headers={"Mcp-Session-Id": session_id})
+    assert response.status_code == 204
+
+    after = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        headers={"Mcp-Session-Id": session_id},
+    )
+    assert after.status_code == 400
