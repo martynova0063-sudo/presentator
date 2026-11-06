@@ -8,12 +8,17 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser({ id: session.user.id, name: session.user.user_metadata?.name || session.user.email })
-      }
-      setLoading(false)
-    })
+    let mounted = true
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!mounted) return
+        if (session) {
+          setUser({ id: session.user.id, name: session.user.user_metadata?.name || session.user.email })
+        }
+      })
+      .catch(() => {})
+      .finally(() => mounted && setLoading(false))
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
@@ -23,7 +28,10 @@ export function AuthProvider({ children }) {
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   return <AuthContext.Provider value={{ user, loading }}>{children}</AuthContext.Provider>

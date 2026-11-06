@@ -1,9 +1,11 @@
 import base64
 from io import BytesIO
 
+import lxml.etree
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.oxml.ns import qn
 from pptx.util import Emu, Inches, Pt
 
 from app.schemas import SlideSpec, TableData
@@ -20,6 +22,7 @@ _LAYOUT_NAMES = {
 }
 _LAYOUT_FALLBACK_INDEX = {"title": 0, "content": 1, "title_only": 5}
 _FONT_NAME = "DejaVu Sans"
+_THEME_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
 
 
 def validate_template(data: bytes) -> None:
@@ -35,6 +38,7 @@ def validate_template(data: bytes) -> None:
 
 def build_pptx(title: str, slides: list[SlideSpec], template: bytes | None) -> bytes:
     prs = _open_base(template)
+    _set_theme_fonts(prs)
     title_slide = prs.slides.add_slide(_layout(prs, "title"))
     _set_title(prs, title_slide, title)
     for spec in slides:
@@ -233,6 +237,28 @@ def _write_cell(cell, text: str, size: int, bold: bool = False) -> None:
         paragraph.font.bold = bold
 
 
+def _set_theme_fonts(prs: Presentation) -> None:
+    # Calibri (the default theme font) is absent in the container image, so LibreOffice
+    # substitutes a Latin-only fallback and Cyrillic renders as tofu. Force the theme
+    # fonts to DejaVu Sans, which covers Cyrillic.
+    master = prs.slide_masters[0]
+    theme_part = master.part.part_related_by(_THEME_REL)
+    theme = lxml.etree.fromstring(theme_part.blob)
+    for scope in ("majorFont", "minorFont"):
+        node = theme.find(f".//{{http://schemas.openxmlformats.org/drawingml/2006/main}}{scope}")
+        if node is None:
+            continue
+        for tag in ("latin", "ea", "cs"):
+            existing = node.find(qn(f"a:{tag}"))
+            if existing is None:
+                existing = node.makeelement(qn(f"a:{tag}"), {})
+                node.append(existing)
+            existing.set("typeface", _FONT_NAME)
+    theme_part._blob = lxml.etree.tostring(
+        theme, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
+
+
 def _apply_font(slide) -> None:
     for shape in slide.shapes:
         if not shape.has_text_frame:
@@ -240,10 +266,22 @@ def _apply_font(slide) -> None:
         for paragraph in shape.text_frame.paragraphs:
             for run in paragraph.runs:
                 run.font.name = _FONT_NAME
-                run_properties = run._r.get_or_add_rPr()
-                run_properties.get_or_add_latin().typeface = _FONT_NAME
-                run_properties.get_or_add_ea().typeface = _FONT_NAME
-                run_properties.get_or_add_cs().typeface = _FONT_NAME
+                _set_run_fonts(run._r.get_or_add_rPr())
+
+
+def _set_run_fonts(rPr) -> None:
+    # python-pptx only exposes get_or_add_latin(); ea/cs must be created via XML.
+    latin = rPr.find(qn("a:latin"))
+    if latin is None:
+        latin = rPr.makeelement(qn("a:latin"), {})
+        rPr.append(latin)
+    latin.set("typeface", _FONT_NAME)
+    for tag in ("a:ea", "a:cs"):
+        node = rPr.find(qn(tag))
+        if node is None:
+            node = rPr.makeelement(qn(tag), {})
+            rPr.append(node)
+        node.set("typeface", _FONT_NAME)
 
 
 def _drop_empty_placeholders(slide) -> None:

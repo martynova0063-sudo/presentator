@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signIn, signUp } from '../api.js'
 import { useAuth } from '../AuthContext.jsx'
@@ -13,10 +13,9 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  if (user) {
-    navigate('/', { replace: true })
-    return null
-  }
+  useEffect(() => {
+    if (user) navigate('/', { replace: true })
+  }, [user, navigate])
 
   const submit = async (event) => {
     event.preventDefault()
