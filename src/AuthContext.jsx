@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import { supabase } from './lib/supabase.js'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { api, apiKeyStorage } from './api.js'
 
 const AuthContext = createContext(null)
 
@@ -8,33 +8,33 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let mounted = true
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        if (!mounted) return
-        if (session) {
-          setUser({ id: session.user.id, name: session.user.user_metadata?.name || session.user.email })
-        }
-      })
-      .catch(() => {})
-      .finally(() => mounted && setLoading(false))
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setUser({ id: session.user.id, name: session.user.user_metadata?.name || session.user.email })
-      } else {
-        setUser(null)
-      }
-    })
-
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
+    if (!apiKeyStorage.get()) {
+      setLoading(false)
+      return
     }
+    api
+      .me()
+      .then(setUser)
+      .catch((err) => {
+        if (err.status === 401) apiKeyStorage.clear()
+      })
+      .finally(() => setLoading(false))
   }, [])
 
-  return <AuthContext.Provider value={{ user, loading }}>{children}</AuthContext.Provider>
+  const login = useCallback(async (apiKey) => {
+    const me = await api.me(apiKey)
+    apiKeyStorage.set(apiKey)
+    setUser(me)
+  }, [])
+
+  const logout = useCallback(() => {
+    apiKeyStorage.clear()
+    setUser(null)
+  }, [])
+
+  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout])
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

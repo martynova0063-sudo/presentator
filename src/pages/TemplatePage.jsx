@@ -1,65 +1,140 @@
-import { Link, useParams } from 'react-router-dom'
-import { getThemes } from '../lib/pptxBuilder.js'
-
-const THEME_INFO = {
-  default: { desc: 'Синие акценты, светлый фон — универсальный выбор', swatch: ['#2563EB', '#F8FAFC', '#0F172A'] },
-  corporate: { desc: 'Глубокий синий, строгий деловой стиль', swatch: ['#1E3A5F', '#F1F5F9', '#0F172A'] },
-  dark: { desc: 'Тёмный фон, яркие акценты — для конференций', swatch: ['#3B82F6', '#1E293B', '#0F172A'] },
-  warm: { desc: 'Янтарные тона, уютная атмосфера', swatch: ['#B45309', '#FEF3C7', '#1C1917'] },
-  forest: { desc: 'Зелёные акценты, экологичная тема', swatch: ['#15803D', '#ECFDF5', '#052E16'] },
-}
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { api } from '../api.js'
+import TemplatePreviewDialog from '../components/TemplatePreviewDialog.jsx'
+import { formatDate } from '../labels.js'
 
 export default function TemplatePage() {
   const { templateId } = useParams()
-  const themes = getThemes()
-  const theme = themes.find((t) => t.key === templateId)
-  const info = THEME_INFO[templateId] || { desc: '', swatch: [] }
+  const navigate = useNavigate()
+  const [template, setTemplate] = useState(null)
+  const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [previewVersion, setPreviewVersion] = useState(null)
+  const [file, setFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
 
-  if (!theme) {
+  useEffect(() => {
+    api
+      .getTemplate(templateId)
+      .then(setTemplate)
+      .catch((err) => setError(err.message))
+  }, [templateId])
+
+  const run = async (action) => {
+    setActionError('')
+    try {
+      await action()
+    } catch (err) {
+      setActionError(err.message)
+    }
+  }
+
+  const activate = (version) =>
+    run(async () => setTemplate(await api.activateTemplateVersion(template.id, version.id)))
+
+  const uploadVersion = (event) => {
+    event.preventDefault()
+    const formEl = event.currentTarget
+    if (!file) return
+    run(async () => {
+      setUploading(true)
+      try {
+        setTemplate(await api.uploadTemplateVersion(template.id, file))
+        setFile(null)
+        formEl.reset()
+      } finally {
+        setUploading(false)
+      }
+    })
+  }
+
+  const remove = () => {
+    if (!window.confirm(`Удалить шаблон «${template.name}» со всеми версиями?`)) return
+    run(async () => {
+      await api.deleteTemplate(template.id)
+      navigate('/templates', { replace: true })
+    })
+  }
+
+  if (error) {
     return (
       <section className="page">
-        <p className="alert alert-error">Тема не найдена</p>
-        <Link to="/templates">Ко всем темам</Link>
+        <p className="alert alert-error">{error}</p>
+        <Link to="/templates" className="btn btn-secondary">
+          К шаблонам
+        </Link>
       </section>
     )
   }
+  if (!template) return <p className="muted">Загружаем шаблон…</p>
+
+  const versions = [...template.versions].sort((a, b) => b.version - a.version)
 
   return (
     <section className="page">
-      <header className="page-header">
-        <Link to="/templates" className="muted small">← Оформление</Link>
-        <h1 className="title">{theme.name}</h1>
-        <p className="muted">{info.desc}</p>
-      </header>
-
-      <div className="card stack">
-        <h2 className="subtitle">Палитра</h2>
-        <div className="theme-swatch-large">
-          {info.swatch.map((color, i) => (
-            <div key={i} className="theme-color-card">
-              <div className="theme-color-block" style={{ background: `#${color}` }} />
-              <span className="mono">#{color}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="theme-preview">
-          <h3 className="subtitle">Образец слайда</h3>
-          <div className="preview-slide" style={{ background: `#${info.swatch[1]}` }}>
-            <div className="preview-title" style={{ color: `#${info.swatch[2]}` }}>Заголовок слайда</div>
-            <div className="preview-bar" style={{ background: `#${info.swatch[0]}` }} />
-            <ul className="preview-bullets" style={{ color: `#${info.swatch[2]}` }}>
-              <li>Первый пункт</li>
-              <li>Второй пункт</li>
-              <li>Третий пункт</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="form-actions">
-          <Link className="btn btn-primary" to="/">Создать с этой темой</Link>
-        </div>
+      <div className="page-header">
+        <Link to="/templates" className="muted small">
+          ← К шаблонам
+        </Link>
+        <h1 className="title">{template.name}</h1>
+        <p className="muted small">Создан {formatDate(template.created_at)}</p>
       </div>
+
+      {actionError && <p className="alert alert-error">{actionError}</p>}
+
+      <section className="card stack">
+        <h2 className="subtitle">Версии</h2>
+        <ul className="version-list">
+          {versions.map((version) => (
+            <li key={version.id} className="version-item">
+              <div>
+                <strong>Версия {version.version}</strong>
+                {version.is_active && <span className="tag tag-success">Активна</span>}
+                <p className="muted small">
+                  {version.original_filename} · {formatDate(version.created_at)}
+                </p>
+              </div>
+              <div className="version-actions">
+                <button type="button" className="btn btn-ghost" onClick={() => setPreviewVersion(version)}>
+                  Предпросмотр
+                </button>
+                {!version.is_active && (
+                  <button type="button" className="btn btn-secondary" onClick={() => activate(version)}>
+                    Сделать активной
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <form className="version-upload form" onSubmit={uploadVersion}>
+          <label className="field">
+            <span className="label">Новая версия (PPTX)</span>
+            <input className="input" type="file" accept=".pptx" onChange={(e) => setFile(e.target.files[0] ?? null)} />
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary" disabled={uploading || !file}>
+              {uploading ? 'Загружаем…' : 'Загрузить версию'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <div className="danger-zone">
+        <button type="button" className="btn btn-danger" onClick={remove}>
+          Удалить шаблон
+        </button>
+      </div>
+
+      {previewVersion && (
+        <TemplatePreviewDialog
+          templateId={template.id}
+          version={previewVersion}
+          onClose={() => setPreviewVersion(null)}
+        />
+      )}
     </section>
   )
 }

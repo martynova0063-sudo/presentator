@@ -1,7 +1,5 @@
-import { supabase } from './lib/supabase.js'
-import { buildOutline } from './lib/content.js'
-import { buildPptx } from './lib/pptxBuilder.js'
-import { buildPdf } from './lib/pdfBuilder.js'
+const API_BASE = '/api'
+const KEY_STORAGE = 'presentator_api_key'
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -10,184 +8,47 @@ export class ApiError extends Error {
   }
 }
 
-function formatError(err) {
-  if (err?.message?.includes('JWT')) return 'Сессия истекла. Войдите снова.'
-  if (err?.message) return err.message
-  return 'Что-то пошло не так, попробуйте еще раз'
+export const apiKeyStorage = {
+  get: () => localStorage.getItem(KEY_STORAGE),
+  set: (key) => localStorage.setItem(KEY_STORAGE, key),
+  clear: () => localStorage.removeItem(KEY_STORAGE),
 }
 
-export async function getSession() {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session
-}
-
-export async function signIn(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) throw new ApiError(error.message, 401)
-  return data
-}
-
-export async function signUp(email, password, name) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { data: { name } },
-  })
-  if (error) throw new ApiError(error.message, 400)
-  return data
-}
-
-export async function signOut() {
-  await supabase.auth.signOut()
-}
-
-export async function getCurrentUser() {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  return { id: user.id, name: user.user_metadata?.name || user.email }
-}
-
-export const api = {
-  async listTasks() {
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50)
-    if (error) throw new ApiError(formatError(error), 500)
-    return data.map(mapTask)
-  },
-
-  async getTask(id) {
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle()
-    if (error) throw new ApiError(formatError(error), 500)
-    if (!data) throw new ApiError('Задача не найдена', 404)
-    return mapTask(data)
-  },
-
-  async createTask(body) {
-    const request = { ...body }
-    delete request.mode
-
-    const { data, error } = await supabase
-      .from('tasks')
-      .insert({
-        title: body.title,
-        want_pdf: body.want_pdf,
-        request,
-        status: 'processing',
-        progress: 0,
-      })
-      .select()
-      .single()
-    if (error) throw new ApiError(formatError(error), 500)
-
-    const task = mapTask(data)
-    try {
-      await generatePresentation(task)
-    } catch (err) {
-      await supabase.from('tasks').update({ status: 'failed', error: err.message }).eq('id', task.id)
-      return { ...task, status: 'failed', error: err.message }
-    }
-    return await this.getTask(task.id)
-  },
-
-  async rebuildTask(taskId, changes) {
-    const parent = await this.getTask(taskId)
-    const newRequest = { ...parent.request, ...changes }
-    const title = changes.title || parent.title
-    const wantPdf = changes.want_pdf ?? parent.want_pdf
-
-    const { data, error } = await supabase
-      .from('tasks')
-      .insert({
-        parent_task_id: parent.id,
-        title,
-        want_pdf: wantPdf,
-        request: newRequest,
-        status: 'processing',
-        progress: 0,
-      })
-      .select()
-      .single()
-    if (error) throw new ApiError(formatError(error), 500)
-
-    const task = mapTask(data)
-    try {
-      await generatePresentation(task)
-    } catch (err) {
-      await supabase.from('tasks').update({ status: 'failed', error: err.message }).eq('id', task.id)
-      return { ...task, status: 'failed', error: err.message }
-    }
-    return await this.getTask(task.id)
-  },
-}
-
-function mapTask(row) {
-  return {
-    id: row.id,
-    title: row.title,
-    status: row.status,
-    progress: row.progress,
-    error: row.error,
-    parent_task_id: row.parent_task_id,
-    want_pdf: row.want_pdf,
-    request: row.request,
-    outline: row.outline,
-    has_pptx: !!row.pptx_key,
-    has_pdf: !!row.pdf_key,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    _pptx_key: row.pptx_key,
-    _pdf_key: row.pdf_key,
+function detailMessage(detail, fallback) {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((item) => item.msg).filter(Boolean).join('; ') || fallback
   }
+  return fallback
 }
 
-async function generatePresentation(task) {
-  const req = task.request
-  const outline = buildOutline(req)
-  const themeKey = req.template_id || 'default'
-
-  const pptxBlob = await buildPptx(task.title, outline, themeKey)
-  const pptxFileName = `presentations/${task.id}/${Date.now()}.pptx`
-  const { error: pptxError } = await supabase.storage
-    .from('presentations')
-    .upload(pptxFileName, pptxBlob, { contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' })
-  if (pptxError) throw new Error('Не удалось сохранить PPTX: ' + pptxError.message)
-
-  const update = {
-    status: 'completed',
-    progress: 100,
-    outline,
-    pptx_key: pptxFileName,
+async function request(path, { method = 'GET', json, form, apiKey, blob = false } = {}) {
+  const headers = { 'X-API-Key': apiKey ?? apiKeyStorage.get() ?? '' }
+  let body
+  if (json !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    body = JSON.stringify(json)
+  } else if (form) {
+    body = form
   }
 
-  if (req.want_pdf) {
-    try {
-      const pdfBlob = await buildPdf(task.title, outline, themeKey)
-      const pdfFileName = `presentations/${task.id}/${Date.now()}.pdf`
-      const { error: pdfError } = await supabase.storage
-        .from('presentations')
-        .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' })
-      if (!pdfError) update.pdf_key = pdfFileName
-    } catch {
-      // PDF optional — PPTX is the primary deliverable
-    }
+  let response
+  try {
+    response = await fetch(`${API_BASE}${path}`, { method, headers, body })
+  } catch {
+    throw new ApiError('Нет связи с сервером. Проверьте, что он запущен.', 0)
   }
 
-  await supabase.from('tasks').update(update).eq('id', task.id)
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new ApiError(detailMessage(payload?.detail, `Ошибка сервера (${response.status})`), response.status)
+  }
+  if (response.status === 204) return null
+  return blob ? response.blob() : response.json()
 }
 
-async function downloadBlob(key, filename) {
-  const { data, error } = await supabase.storage
-    .from('presentations')
-    .download(key)
-  if (error) throw new ApiError('Не удалось скачать файл', error.status || 500)
-  const url = URL.createObjectURL(data)
+export function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
@@ -195,12 +56,33 @@ async function downloadBlob(key, filename) {
   URL.revokeObjectURL(url)
 }
 
-export async function downloadResult(taskId, taskPptxKey, title) {
-  const safeName = title.replace(/[\\/:*?"<>|]/g, '_')
-  await downloadBlob(taskPptxKey, `${safeName}.pptx`)
+export function safeFilename(name) {
+  return name.replace(/[\\/:*?"<>|]/g, '_')
 }
 
-export async function downloadPdfResult(taskPdfKey, title) {
-  const safeName = title.replace(/[\\/:*?"<>|]/g, '_')
-  await downloadBlob(taskPdfKey, `${safeName}.pdf`)
+function fileForm(fields, file) {
+  const form = new FormData()
+  Object.entries(fields).forEach(([key, value]) => form.append(key, value))
+  form.append('file', file)
+  return form
+}
+
+export const api = {
+  me: (apiKey) => request('/me', { apiKey }),
+
+  listTasks: () => request('/tasks'),
+  getTask: (id) => request(`/tasks/${id}`),
+  createTask: (body) => request('/tasks', { method: 'POST', json: body }),
+  rebuildTask: (id, changes) => request(`/tasks/${id}/rebuild`, { method: 'POST', json: changes }),
+  downloadTaskFile: (id, format) => request(`/tasks/${id}/result?format=${format}`, { blob: true }),
+
+  listTemplates: () => request('/templates'),
+  getTemplate: (id) => request(`/templates/${id}`),
+  createTemplate: (name, file) => request('/templates', { method: 'POST', form: fileForm({ name }, file) }),
+  uploadTemplateVersion: (id, file) => request(`/templates/${id}/versions`, { method: 'POST', form: fileForm({}, file) }),
+  activateTemplateVersion: (id, versionId) =>
+    request(`/templates/${id}/versions/${versionId}/activate`, { method: 'POST' }),
+  getTemplateVersionPreview: (id, versionId) =>
+    request(`/templates/${id}/versions/${versionId}/preview`, { blob: true }),
+  deleteTemplate: (id) => request(`/templates/${id}`, { method: 'DELETE' }),
 }

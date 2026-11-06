@@ -42,7 +42,9 @@ services:
       - storage:/data/storage
 
   web:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     depends_on:
       - api
     ports:

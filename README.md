@@ -5,7 +5,7 @@
 ## Состав
 
 - `backend/` — FastAPI, SQLAlchemy, Alembic, python-pptx, RQ (очередь на Redis), LibreOffice для PDF.
-- `frontend/` — React (файлы .jsx), Vite, интерфейс на русском языке.
+- `src/` — React (файлы .jsx), Vite, интерфейс на русском языке; `frontend/` — Dockerfile и конфиг nginx для сборки контейнера.
 - `docker-compose.yml` — PostgreSQL, Redis, API, воркер и веб-интерфейс.
 
 ## Быстрый старт (Docker)
@@ -29,7 +29,7 @@ uvicorn app.main:app --reload
 rq worker presentations --url redis://localhost:6379/0   # отдельный терминал
 ```
 
-Фронтенд: `cd frontend && npm install && npm run dev` (откроется http://localhost:5173, запросы идут на порт 8000).
+Фронтенд: `npm install && npm run dev` (откроется http://localhost:5173, запросы идут на порт 8000).
 
 ## Конфигурация
 

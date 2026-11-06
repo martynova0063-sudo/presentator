@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
-import { getThemes } from '../lib/pptxBuilder.js'
-
-const THEMES = getThemes()
 
 export default function RebuildDialog({ task, onClose, onRebuilt }) {
+  const currentTemplateId = task.request?.template_id ?? ''
   const [title, setTitle] = useState(task.title)
-  const [templateId, setTemplateId] = useState(task.request.template_id ?? 'default')
-  const [slidesCount, setSlidesCount] = useState(task.request.slides_count ?? 8)
-  const [wantPdf, setWantPdf] = useState(task.want_pdf ?? false)
+  const [slidesCount, setSlidesCount] = useState(task.request?.slides_count ?? 8)
+  const [templateId, setTemplateId] = useState(String(currentTemplateId))
+  const [wantPdf, setWantPdf] = useState(Boolean(task.want_pdf))
+  const [templates, setTemplates] = useState([])
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -18,24 +17,23 @@ export default function RebuildDialog({ task, onClose, onRebuilt }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  useEffect(() => {
+    api.listTemplates().then(setTemplates).catch((err) => setError(err.message))
+  }, [])
+
   const submit = async (event) => {
     event.preventDefault()
     const changes = {}
     if (title.trim() !== task.title) changes.title = title.trim()
-    if (String(templateId) !== String(task.request.template_id ?? 'default')) {
-      changes.template_id = templateId
-    }
-    if (Number(slidesCount) !== task.request.slides_count) changes.slides_count = Number(slidesCount)
-    if (wantPdf !== (task.want_pdf ?? false)) changes.want_pdf = wantPdf
-    if (Object.keys(changes).length === 0) {
-      setError('Измените хотя бы один параметр')
-      return
-    }
+    if (Number(slidesCount) !== task.request?.slides_count) changes.slides_count = Number(slidesCount)
+    if (templateId !== String(currentTemplateId)) changes.template_id = templateId ? Number(templateId) : null
+    if (wantPdf !== Boolean(task.want_pdf)) changes.want_pdf = wantPdf
+
     setSubmitting(true)
     setError('')
     try {
-      const rebuilt = await api.rebuildTask(task.id, changes)
-      onRebuilt(rebuilt)
+      const created = await api.rebuildTask(task.id, changes)
+      onRebuilt(created)
     } catch (err) {
       setError(err.message)
       setSubmitting(false)
@@ -44,67 +42,59 @@ export default function RebuildDialog({ task, onClose, onRebuilt }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal card fade-in" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h2 className="subtitle">Собрать заново</h2>
-        <p className="muted small">
-          Если меняется только оформление или название, структура слайдов сохранится. Изменение числа слайдов
-          перестроит содержание.
-        </p>
-        <form className="form" onSubmit={submit}>
-          <label className="field">
-            <span className="label">Название</span>
-            <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-          </label>
+      <form
+        className="modal card fade-in"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+      >
+        <h2 className="subtitle">Пересборка презентации</h2>
+        <p className="muted small">Будет создана новая презентация на основе этой. Исходная останется в истории.</p>
 
-          <div className="field">
-            <span className="label">Оформление</span>
-            <div className="palette-grid palette-grid-compact">
-              {THEMES.map((t) => (
-                <button
-                  type="button"
-                  key={t.key}
-                  className={`palette-card ${templateId === t.key ? 'palette-card-active' : ''}`}
-                  onClick={() => setTemplateId(t.key)}
-                >
-                  <div className="palette-swatches">
-                    {t.swatch.map((color, i) => (
-                      <span key={i} className="palette-dot" style={{ background: `#${color}` }} />
-                    ))}
-                  </div>
-                  <span className="palette-name">{t.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+        <label className="field">
+          <span className="label">Название</span>
+          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required />
+        </label>
+        <label className="field">
+          <span className="label">Количество слайдов</span>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={40}
+            value={slidesCount}
+            onChange={(e) => setSlidesCount(e.target.value)}
+            required
+          />
+        </label>
+        <label className="field">
+          <span className="label">Шаблон оформления</span>
+          <select className="input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+            <option value="">Стандартное оформление</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={wantPdf} onChange={(e) => setWantPdf(e.target.checked)} />
+          Также подготовить PDF
+        </label>
 
-          <label className="field">
-            <span className="label">Количество слайдов</span>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={40}
-              value={slidesCount}
-              onChange={(e) => setSlidesCount(e.target.value)}
-            />
-          </label>
+        {error && <p className="alert alert-error">{error}</p>}
 
-          <label className="check">
-            <input type="checkbox" checked={wantPdf} onChange={(e) => setWantPdf(e.target.checked)} />
-            <span>Также создать PDF-версию</span>
-          </label>
-
-          {error && <p className="alert alert-error">{error}</p>}
-          <div className="form-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Отмена
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? 'Собираем…' : 'Собрать заново'}
-            </button>
-          </div>
-        </form>
-      </div>
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={submitting || !title.trim()}>
+            {submitting ? 'Запускаем…' : 'Пересобрать'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
