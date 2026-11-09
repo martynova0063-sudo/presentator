@@ -8,10 +8,6 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!apiKeyStorage.get()) {
-      setLoading(false)
-      return
-    }
     api
       .me()
       .then(setUser)
@@ -21,10 +17,8 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const login = useCallback(async (apiKey) => {
-    const me = await api.me(apiKey)
-    apiKeyStorage.set(apiKey)
-    setUser(me)
+  const login = useCallback(async () => {
+    setUser(await api.me())
   }, [])
 
   const logout = useCallback(() => {

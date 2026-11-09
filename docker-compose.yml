@@ -21,6 +21,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/presentator
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data/storage
+      AUTH_REQUIRED: "false"
     depends_on:
       - postgres
       - redis

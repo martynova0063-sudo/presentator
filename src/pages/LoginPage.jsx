@@ -5,7 +5,6 @@ import { useAuth } from '../AuthContext.jsx'
 export default function LoginPage() {
   const navigate = useNavigate()
   const { user, login } = useAuth()
-  const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -16,7 +15,7 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      await login(apiKey.trim())
+      await login()
       navigate('/', { replace: true })
     } catch (err) {
       setError(err.message)
@@ -28,26 +27,12 @@ export default function LoginPage() {
     <div className="login-page">
       <form className="card login-card fade-in" onSubmit={submit}>
         <h1 className="title">Презентатор</h1>
-        <p className="muted">Введите ваш API-ключ, чтобы создавать презентации.</p>
-
-        <label className="field">
-          <span className="label">API-ключ</span>
-          <input
-            className="input"
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            autoComplete="off"
-            autoFocus
-            required
-          />
-          <span className="hint">Ключ выдаёт администратор системы.</span>
-        </label>
+        <p className="muted">Создавайте презентации по тексту или данным.</p>
 
         {error && <p className="alert alert-error">{error}</p>}
 
-        <button type="submit" className="btn btn-primary btn-block" disabled={loading || !apiKey.trim()}>
-          {loading ? 'Проверяем ключ…' : 'Войти'}
+        <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+          {loading ? 'Входим…' : 'Войти'}
         </button>
       </form>
     </div>

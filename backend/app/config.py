@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    auth_required: bool = True
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
