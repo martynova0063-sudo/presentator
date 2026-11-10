@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 
 from app.config import settings
 from app.routers import api, mcp, templates
@@ -71,10 +72,8 @@ app = FastAPI(
         "ответ `200 OK` с готовой задачей."
     ),
     openapi_tags=TAGS_METADATA,
-    openapi_url="/api/v1/openapi.json",
-    docs_url="/api/v1/docs",
-    redoc_url="/api/v1/redoc",
-    swagger_ui_oauth2_redirect_url="/api/v1/docs/oauth2-redirect",
+    docs_url=None,
+    redoc_url=None,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -85,6 +84,12 @@ app.add_middleware(
 app.include_router(api.router)
 app.include_router(templates.router)
 app.include_router(mcp.router)
+
+
+@app.get("/docs", include_in_schema=False)
+def swagger_ui():
+    # The public site serves the API under /api, so the schema must be requested from that prefix.
+    return get_swagger_ui_html(openapi_url="/api/openapi.json", title=app.title)
 
 
 @app.get(
