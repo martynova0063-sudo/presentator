@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Презентатор — Swagger UI</title>
+    <link rel="stylesheet" href="/api/vendor/swagger-ui.css" />
+    <style>
+      html { box-sizing: border-box; }
+      *, *::before, *::after { box-sizing: inherit; }
+      body { margin: 0; background: #f8fafc; }
+      .swagger-ui .topbar { background: #0f2742; }
+      .swagger-ui .info .title { color: #0f2742; }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="/api/vendor/swagger-ui-bundle.js" crossorigin></script>
+    <script src="/api/vendor/swagger-ui-standalone-preset.js" crossorigin></script>
+    <script>
+      window.onload = function () {
+        window.ui = SwaggerUIBundle({
+          url: '/api/openapi.json',
+          dom_id: '#swagger-ui',
+          deepLinking: true,
+          displayRequestDuration: true,
+          docExpansion: 'list',
+          persistAuthorization: true,
+          tryItOutEnabled: false,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          layout: 'StandaloneLayout'
+        });
+      };
+    </script>
+  </body>
+</html>
